@@ -5,10 +5,11 @@ import { width as w, height as h } from 'react-native-dimension';
 import SuperCluster from 'supercluster';
 import CustomMarker from './CustomMarker';
 
+var _ = require("lodash");
+
 export default class MapWithClustering extends Component {
   state = {
     currentRegion: this.props.region,
-    currentChildren: this.props.children,
     clusterStyle: {
       borderRadius: w(15),
       backgroundColor: this.props.clusterColor,
@@ -27,22 +28,19 @@ export default class MapWithClustering extends Component {
   };
 
   componentDidMount() {
+      this.props.onRef(this);
     this.createMarkersOnMap();
   }
 
-  static getDerivedStateFromProps(nextProps, prevState) {
-    if (nextProps.children != prevState.currentChildren) {
-      return {
-        currentChildren: nextProps.children
-      };
-    } else {
-      return null
-    }
-  }
-  componentDidUpdate(prevProps, prevState) {
-    if (this.props.children !== prevProps.children) {
-      this.createMarkersOnMap(this.state.currentChildren);
-    }
+  /*componentWillReceiveProps() {
+    this.createMarkersOnMap();
+}*/
+
+  componentDidUpdate(prevProps){
+      //TODO: add zoom level change
+      if(!_.isEqual(this.props.children, prevProps.children)){
+          this.createMarkersOnMap();
+      }
   }
 
   onRegionChangeComplete = (region) => {
@@ -54,8 +52,6 @@ export default class MapWithClustering extends Component {
         this.calculateClustersForMap(region);
       }
     }
-    if(this.props.onRegionChangeComplete)
-      this.props.onRegionChangeComplete(region)
   };
 
   createMarkersOnMap = () => {
@@ -63,23 +59,21 @@ export default class MapWithClustering extends Component {
     const otherChildren = [];
 
     React.Children.forEach(this.props.children, (marker) => {
-      if (marker !== null) {
-        if (marker.props && marker.props.coordinate && marker.props.cluster !== false) {
-          markers.push({
-            marker,
-            properties: { point_count: 0 },
-            geometry: {
-              type: 'Point',
-              coordinates: [
-                marker.props.coordinate.longitude,
-                marker.props.coordinate.latitude,
-              ],
-            },
-          });
-        } else {
-          otherChildren.push(marker);
-        }
-      } 
+      if (marker.props && marker.props.coordinate && marker.props.cluster) {
+        markers.push({
+          marker,
+          properties: { point_count: 0 },
+          geometry: {
+            type: 'Point',
+            coordinates: [
+              marker.props.coordinate.longitude,
+              marker.props.coordinate.latitude,
+            ],
+          },
+        });
+      } else {
+        otherChildren.push(marker);
+      }
     });
 
     if (!this.superCluster) {
@@ -136,14 +130,15 @@ export default class MapWithClustering extends Component {
       const bBox = this.calculateBBox(this.state.currentRegion);
       let zoom = this.getBoundsZoomLevel(bBox, { height: h(100), width: w(100) });
       const clusters = await this.superCluster.getClusters([bBox[0], bBox[1], bBox[2], bBox[3]], zoom);
-      const CustomDefinedMarker = this.props.customDefinedMarker || CustomMarker
-      
-      clusteredMarkers = clusters.map(cluster => (<CustomDefinedMarker
+
+      clusteredMarkers = clusters.map(cluster => (<CustomMarker
         pointCount={cluster.properties.point_count}
         clusterId={cluster.properties.cluster_id}
+        children={this.superCluster.getChildren(cluster.properties.cluster_id)}
         geometry={cluster.geometry}
         clusterStyle={this.state.clusterStyle}
         clusterTextStyle={this.state.clusterTextStyle}
+        clusterTextColor={this.props.clusterTextColor}
         marker={cluster.properties.point_count === 0 ? cluster.marker : null}
         key={JSON.stringify(cluster.geometry) + cluster.properties.cluster_id + cluster.properties.point_count}
         onClusterPress={this.props.onClusterPress}
@@ -174,7 +169,7 @@ export default class MapWithClustering extends Component {
         {...this.removeChildrenFromProps(this.props)}
         ref={(ref) => { this.root = ref; }}
         region={this.state.currentRegion}
-        onRegionChangeComplete={this.onRegionChangeComplete}
+        onRegionChangeComplete={this.props.onRegionChangeComplete}
       >
         {this.state.clusteredMarkers}
         {this.state.otherChildren}
